@@ -11,7 +11,10 @@ version = "0.1.0"
 description = "IPython wrapper for build123d and cadquery projects"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["click>=8.3.1"]
+dependencies = ["ipython>=9.11.0", "wpexpect"]
 
 [project.scripts]
 ipb3d = "ipython-b3d.main:main"
+
+[tool.uv.sources]
+wpexpect = {git = "https://github.com/Gigahawk/wpexpect.git"}

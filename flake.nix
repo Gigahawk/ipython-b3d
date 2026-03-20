@@ -57,6 +57,11 @@
         hacks = pkgs.callPackage pyproject-nix.build.hacks { };
 
         pyprojectOverrides = final: prev: {
+          wpexpect = prev.wpexpect.overrideAttrs (old: {
+            buildInputs = (old.buildInputs or [ ]) ++ [
+              prev.uv-build
+            ];
+          });
           # Example overrides to fix build
           # psycopg2 = prev.psycopg2.overrideAttrs (old: {
           #   buildInputs = (old.buildInputs or [ ]) ++ [
