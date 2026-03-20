@@ -22,6 +22,9 @@ import signal
 import termios
 import subprocess
 import argparse
+from multiprocessing import Process
+
+from ipython_b3d.viewer import run_ocp_vscode
 
 
 # ---------------------------------------------------------------------------
@@ -281,6 +284,9 @@ def main() -> None:
     if not os.path.isfile(args.file):
         print(f"[ipy_watcher] ERROR: File not found: {args.file!r}", file=sys.stderr)
         sys.exit(1)
+
+    ocp_proc = Process(target=run_ocp_vscode)
+    ocp_proc.start()
 
     run(args.file)
 
