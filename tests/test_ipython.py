@@ -1,16 +1,12 @@
 import time
 
-import wpexpect
+import pexpect
 
 
 def test_ipython():
-    # env = copy.copy(os.environ)
-    ## Disable color codes
-    # env["TERM"] = "dumb"
-    child = wpexpect.spawn(
+    child = pexpect.spawn(
         # disable control chars
         "ipython --simple-prompt",
-        # env=env,
         encoding="utf-8",
     )
     child.expect("In ", timeout=10)
