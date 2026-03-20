@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
-ipy_watcher.py
-
 Launches an IPython REPL in a PTY, transparently forwarding the user's
 terminal to it. When a watched file is saved, injects Ctrl-C followed by
 a %run command into the IPython session — as if the user had typed it.
 
 Usage:
-    python ipy_watcher.py <file_to_watch.py>
+    # TODO: set up script alias
+    python main.py <file_to_watch.py>
 """
 
 import time
@@ -41,6 +40,7 @@ _pipe_r, _pipe_w = os.pipe()
 def _request_reload(filepath: str) -> None:
     """Called from the watcher thread to signal a reload."""
     # Store the path so the main loop knows what to %run.
+    print("\r\n[ipython-b3d] Save detected, requesting reload\r\n")
     _request_reload.pending_path = filepath
     try:
         os.write(_pipe_w, b"\x01")  # Any single byte works as a wake-up.
@@ -149,7 +149,7 @@ def run(watch_file: str) -> None:
     # ---- Start file watcher -------------------------------------------------
     _start_watcher(abs_watch)
     print(
-        f"[ipy_watcher] Watching {abs_watch!r}. Save it to trigger a %run reload.\n",
+        f"[ipython-b3d] Watching {abs_watch!r}. Save it to trigger a %run reload.\n",
         file=sys.stderr,
     )
 
@@ -265,7 +265,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if not os.path.isfile(args.file):
-        print(f"[ipy_watcher] ERROR: File not found: {args.file!r}", file=sys.stderr)
+        print(f"[ipython-b3d] ERROR: File not found: {args.file!r}", file=sys.stderr)
         sys.exit(1)
 
     ocp_proc = Process(target=run_ocp_vscode)
