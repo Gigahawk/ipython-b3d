@@ -1,0 +1,17 @@
+[build-system]
+requires = ["uv_build>=0.8.14,<0.9.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = ["pytest>=9.0.2"]
+
+[project]
+name = "ipython-b3d"
+version = "0.1.0"
+description = "IPython wrapper for build123d and cadquery projects"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["click>=8.3.1"]
+
+[project.scripts]
+ipb3d = "ipython-b3d.main:main"
