@@ -1,6 +1,6 @@
 {
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
     flake-utils.url = "github:numtide/flake-utils";
 
     pyproject-nix = {
@@ -29,34 +29,59 @@
     };
   };
 
-  outputs =
-    {
-      self,
-      nixpkgs,
-      flake-utils,
-      pyproject-nix,
-      uv2nix,
-      pyproject-build-systems,
-      treefmt-nix,
-      ...
-    }:
-    flake-utils.lib.eachDefaultSystem (
-      system:
+  outputs = { self, nixpkgs, flake-utils, pyproject-nix, uv2nix
+    , pyproject-build-systems, treefmt-nix, ... }:
+    flake-utils.lib.eachDefaultSystem (system:
       let
         inherit (nixpkgs) lib;
         pkgs = import nixpkgs { inherit system; };
         python = pkgs.python312;
 
+        # cadquery-ocp needs vtk 9.3
+        vtkDeriv =
+          import "${pkgs.path}/pkgs/development/libraries/vtk/generic.nix" {
+            #version = "9.3.1";
+            majorVersion = "9.3";
+            minorVersion = "1";
+            sourceSha256 =
+              "sha256-g1TsCE6g0tw9I9vkJDgjxL/CcDgtDOjWWJOf1QBhyrg=";
+          };
+        vtk = (pkgs.callPackage vtkDeriv {
+          enablePython = true;
+          inherit python;
+          #pythonSupport = true;
+
+          # Other stuff that callPackage doesn't fill in for some reason?
+          qtdeclarative = pkgs.qt5.qtdeclarative;
+          qttools = pkgs.qt5.qttools;
+          qtx11extras = pkgs.qt5.qtx11extras;
+          qtEnv = pkgs.qt5.qtEnv;
+        }).overrideAttrs (old: {
+          # cadquery-ocp wheel looks for versioned .so file names
+          cmakeFlags = old.cmakeFlags ++ [ "-DVTK_VERSIONED_INSTALL=ON" ];
+        });
+
         workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./.; };
-        overlay = workspace.mkPyprojectOverlay {
-          sourcePreference = "wheel";
-        };
-        editableOverlay = workspace.mkEditablePyprojectOverlay {
-          root = "$REPO_ROOT";
-        };
+        overlay = workspace.mkPyprojectOverlay { sourcePreference = "wheel"; };
+        editableOverlay =
+          workspace.mkEditablePyprojectOverlay { root = "$REPO_ROOT"; };
         hacks = pkgs.callPackage pyproject-nix.build.hacks { };
 
         pyprojectOverrides = final: prev: {
+          cadquery-ocp = prev.cadquery-ocp.overrideAttrs (old: {
+            buildInputs = (old.buildInputs or [ ]) ++ [ vtk ];
+
+            # TODO: this no longer happens once cadquery was included???
+            # HACK: work around ImportError issue
+            postInstall = ''
+              main_init=$out/${python.sitePackages}/OCP/__init__.py
+              echo 'import vtk'$'\n'"$(cat $main_init)" > $main_init
+            '';
+          });
+          pyperclip = prev.pyperclip.overrideAttrs (old: {
+            buildInputs = (old.buildInputs or [ ]) ++ [ prev.setuptools ];
+          });
+
           # Example overrides to fix build
           # psycopg2 = prev.psycopg2.overrideAttrs (old: {
           #   buildInputs = (old.buildInputs or [ ]) ++ [
@@ -101,29 +126,26 @@
           #});
         };
 
-        pythonSet =
-          (pkgs.callPackage pyproject-nix.build.packages {
-            inherit python;
-          }).overrideScope
-            (
-              lib.composeManyExtensions [
-                pyproject-build-systems.overlays.wheel
-                overlay
-                pyprojectOverrides
-              ]
-            );
+        pythonSet = (pkgs.callPackage pyproject-nix.build.packages {
+          inherit python;
+        }).overrideScope (lib.composeManyExtensions [
+          pyproject-build-systems.overlays.wheel
+          overlay
+          pyprojectOverrides
+        ]);
 
         editablePythonSet = pythonSet.overrideScope editableOverlay;
-        virtualenv = editablePythonSet.mkVirtualEnv "ipython-b3d-dev-env" workspace.deps.all;
+        virtualenv = editablePythonSet.mkVirtualEnv "ipython-b3d-dev-env"
+          workspace.deps.all;
 
         inherit (pkgs.callPackages pyproject-nix.build.util { }) mkApplication;
 
         treefmtEval = treefmt-nix.lib.evalModule pkgs ./treefmt.nix;
-      in
-      {
+      in {
         packages = {
           ipython-b3d = mkApplication {
-            venv = pythonSet.mkVirtualEnv "ipython-b3d-app-env" workspace.deps.default;
+            venv = pythonSet.mkVirtualEnv "ipython-b3d-app-env"
+              workspace.deps.default;
             package = pythonSet.ipython-b3d;
           };
           default = self.packages.${system}.ipython-b3d;
@@ -136,19 +158,14 @@
         };
         devShells = {
           default = pkgs.mkShell {
-            packages = [
-              virtualenv
-              pkgs.uv
-              pkgs.sphinx
-              pkgs.git
-            ];
+            packages = [ virtualenv pkgs.uv pkgs.sphinx pkgs.git ];
             env = {
               UV_NO_SYNC = "1";
               UV_PYTHON = editablePythonSet.python.interpreter;
               UV_PYTHON_DOWNLOADS = "never";
-            }
-            // lib.optionalAttrs pkgs.stdenv.isLinux {
-              LD_LIBRARY_PATH = lib.makeLibraryPath pkgs.pythonManylinuxPackages.manylinux1;
+            } // lib.optionalAttrs pkgs.stdenv.isLinux {
+              LD_LIBRARY_PATH =
+                lib.makeLibraryPath pkgs.pythonManylinuxPackages.manylinux1;
             };
             shellHook = ''
               unset PYTHONPATH
@@ -157,6 +174,5 @@
             '';
           };
         };
-      }
-    );
+      });
 }

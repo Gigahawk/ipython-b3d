@@ -3,7 +3,7 @@ requires = ["uv_build>=0.8.14,<0.9.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
-dev = ["pytest>=9.0.2"]
+dev = ["build123d>=0.10.0", "pytest>=9.0.2"]
 
 [project]
 name = "ipython-b3d"
@@ -11,7 +11,7 @@ version = "0.1.0"
 description = "IPython wrapper for build123d and cadquery projects (linux/macos only)"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["ipython>=9.11.0", "pexpect>=4.9.0"]
+dependencies = ["ipython>=9.11.0", "ocp-vscode>=3.1.2", "watchdog>=6.0.0"]
 
 [project.scripts]
 ipb3d = "ipython-b3d.main:main"
