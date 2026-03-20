@@ -8,11 +8,9 @@ a %run command into the IPython session — as if the user had typed it.
 
 Usage:
     python ipy_watcher.py <file_to_watch.py>
-
-Requirements:
-    pip install watchdog
 """
 
+import time
 import os
 import pty
 import sys
@@ -23,6 +21,9 @@ import termios
 import subprocess
 import argparse
 from multiprocessing import Process
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+import fcntl
 
 from ipython_b3d.viewer import run_ocp_vscode
 
@@ -60,17 +61,6 @@ def _start_watcher(filepath: str) -> None:
     Start a watchdog observer that calls _request_reload() whenever
     `filepath` is closed-after-write (i.e. saved).
     """
-    try:
-        from watchdog.observers import Observer
-        from watchdog.events import FileSystemEventHandler
-    except ImportError:
-        print(
-            "[ipy_watcher] ERROR: 'watchdog' is not installed.\n"
-            "  Install it with:  pip install watchdog\n",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
     abs_path = os.path.abspath(filepath)
     watch_dir = os.path.dirname(abs_path)
 
@@ -112,12 +102,10 @@ def _restore(fd: int, attrs: list) -> None:
 
 def _resize_pty(master_fd: int) -> None:
     """Forward the current terminal window size to the PTY master."""
-    import fcntl
-    import termios as _t
 
     try:
-        buf = fcntl.ioctl(sys.stdout.fileno(), _t.TIOCGWINSZ, b"\x00" * 8)
-        fcntl.ioctl(master_fd, _t.TIOCSWINSZ, buf)
+        buf = fcntl.ioctl(sys.stdout.fileno(), termios.TIOCGWINSZ, b"\x00" * 8)
+        fcntl.ioctl(master_fd, termios.TIOCSWINSZ, buf)
     except Exception:
         pass  # Non-fatal; IPython will just use a default size.
 
@@ -144,10 +132,7 @@ def run(watch_file: str) -> None:
         #    This is the step that was missing: without TIOCSCTTY, the slave's
         #    ISIG line discipline never fires, so \x03 from Ctrl-C is never
         #    converted into SIGINT for IPython's process group.
-        import fcntl
-        import termios as _t
-
-        fcntl.ioctl(slave_fd, _t.TIOCSCTTY, 0)
+        fcntl.ioctl(slave_fd, termios.TIOCSCTTY, 0)
 
     proc = subprocess.Popen(
         ["ipython"],
@@ -231,13 +216,11 @@ def run(watch_file: str) -> None:
                 path = _request_reload.pending_path
 
                 # Small delay so the editor has fully flushed the file.
-                import time
 
                 time.sleep(0.05)
 
                 # Inject: Ctrl-C to interrupt any running cell, then %run.
                 os.write(master_fd, b"\x03")  # Ctrl-C
-                import time
 
                 time.sleep(0.05)  # Let IPython print ^C
                 cmd = f"%run {path}\n".encode()
@@ -286,6 +269,7 @@ def main() -> None:
         sys.exit(1)
 
     ocp_proc = Process(target=run_ocp_vscode)
+    ocp_proc.daemon = True
     ocp_proc.start()
 
     run(args.file)

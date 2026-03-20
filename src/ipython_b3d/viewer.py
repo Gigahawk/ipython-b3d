@@ -1,7 +1,7 @@
-from ocp_vscode.__main__ import main
-
-
 def run_ocp_vscode():
+    # import in function to avoid slow startup
+    from ocp_vscode.__main__ import main
+
     # TODO: support args
     main([], standalone_mode=False)
 
