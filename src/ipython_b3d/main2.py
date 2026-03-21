@@ -9,6 +9,7 @@ import termios
 from multiprocessing import Process
 import signal
 import select
+import fcntl
 
 from watchdog.observers import Observer
 
@@ -47,8 +48,7 @@ class IPythonB3d:
             stdout=self.slave_fd,
             stderr=self.slave_fd,
             close_fds=True,
-            # TODO: THIS IS NEEDED TO PASS THRU CTRL-C
-            # preexec_fn=_child_setup,
+            preexec_fn=_child_setup,
         )
 
         os.close(self.slave_fd)
