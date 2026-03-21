@@ -1,4 +1,5 @@
 def run_ocp_vscode():
+    print("\r\n[Viewer] Starting viewer")
     # import in function to avoid slow startup
     from ocp_vscode.__main__ import main
 
