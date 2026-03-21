@@ -1,7 +1,5 @@
 import termios
-import tty
 import fcntl
-import termios
 import sys
 
 

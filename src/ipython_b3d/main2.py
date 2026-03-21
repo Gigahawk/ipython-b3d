@@ -3,7 +3,6 @@ import argparse
 import pty
 import sys
 import os
-import tty
 import subprocess
 import termios
 from multiprocessing import Process
