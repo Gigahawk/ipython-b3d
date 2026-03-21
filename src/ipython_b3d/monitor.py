@@ -12,26 +12,23 @@ class IPythonB3dEventHandler(FileSystemEventHandler):
         self.last_run: float = 0.0
         self.msg_pipe: int = msg_pipe
 
-        print(f"[Monitor] Monitoring '{self.file_to_watch}'", file=sys.stderr)
+        print(f"[Monitor] Monitoring '{self.file_to_watch}'")
 
     def _request_reload(self):
-        print(f"\r\n[Monitor] Detected change in '{self.file_to_watch}'")
+        print(f"[Monitor] Detected change in '{self.file_to_watch}'")
         now = time.time()
         if now - self.last_run < self.debounce_time:
-            print(
-                f"[Monitor] Not requesting reload since reload was just requested",
-                file=sys.stderr,
-            )
+            print(f"[Monitor] Not requesting reload since reload was just requested")
             return
 
         self.last_run = now
-        print(f"\r\n[Monitor] Requesting reload")
+        print(f"[Monitor] Requesting reload")
         # Write a random byte to signal reload
         try:
             os.write(self.msg_pipe, b"\x01")
         except OSError:
             print(
-                f"\r\n[Monitor] Request failed, pipe is probably closed",
+                f"[Monitor] Request failed, pipe is probably closed",
                 file=sys.stderr,
             )
             pass

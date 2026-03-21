@@ -40,7 +40,7 @@ _pipe_r, _pipe_w = os.pipe()
 def _request_reload(filepath: str) -> None:
     """Called from the watcher thread to signal a reload."""
     # Store the path so the main loop knows what to %run.
-    print("\r\n[ipython-b3d] Save detected, requesting reload\r\n")
+    print("[ipython-b3d] Save detected, requesting reload")
     _request_reload.pending_path = filepath
     try:
         os.write(_pipe_w, b"\x01")  # Any single byte works as a wake-up.
@@ -149,8 +149,7 @@ def run(watch_file: str) -> None:
     # ---- Start file watcher -------------------------------------------------
     _start_watcher(abs_watch)
     print(
-        f"[ipython-b3d] Watching {abs_watch!r}. Save it to trigger a %run reload.\n",
-        file=sys.stderr,
+        f"[ipython-b3d] Watching {abs_watch!r}. Save it to trigger a %run reload.",
     )
 
     # ---- Set user's terminal to raw mode ------------------------------------

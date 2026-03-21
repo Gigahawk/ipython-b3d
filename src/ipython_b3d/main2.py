@@ -15,7 +15,7 @@ from watchdog.observers import Observer
 
 from ipython_b3d.viewer import run_ocp_vscode
 from ipython_b3d.monitor import IPythonB3dEventHandler
-from ipython_b3d.util import resize_pty, set_tty_attr
+from ipython_b3d.util import resize_pty, set_tty_attr, make_raw
 
 
 class IPythonB3d:
@@ -38,10 +38,7 @@ class IPythonB3d:
             os.setsid()
             fcntl.ioctl(slave_fd, termios.TIOCSCTTY, 0)
 
-        print(
-            "[ipython-b3d] Starting IPython console",
-            file=sys.stderr,
-        )
+        print("[ipython-b3d] Starting IPython console")
         self.proc = subprocess.Popen(
             ["ipython"],
             stdin=self.slave_fd,
@@ -55,13 +52,12 @@ class IPythonB3d:
 
         self.start_file_watcher()
         print(
-            f"[ipython-b3d] Started monitor for {self.abs_path!r}. Save it to trigger a %run reload.\n",
-            file=sys.stderr,
+            f"[ipython-b3d] Started monitor for {self.abs_path!r}. Save it to trigger a %run reload.\n"
         )
 
         self.stdin_fd = sys.stdin.fileno()
         old_attrs = termios.tcgetattr(self.stdin_fd)
-        tty.setraw(self.stdin_fd)
+        make_raw(self.stdin_fd)
 
         self.set_signal_handlers()
 
@@ -126,10 +122,7 @@ class IPythonB3d:
     def input_loop(self):
         while True:
             if self.proc is not None and self.proc.poll() is not None:
-                print(
-                    "[ipython-b3d] IPython has exited",
-                    file=sys.stderr,
-                )
+                print("[ipython-b3d] IPython has exited", file=sys.stderr)
                 break
 
             try:
