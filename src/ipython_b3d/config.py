@@ -46,6 +46,18 @@ __ipb3dconfig_logger = logging.getLogger("IPythonConfig")
         """
 
     @property
+    def pre_run_setup_section(self) -> str:
+        return f"""
+from IPython import get_ipython
+
+def __pre_run_handler(*args, **kwargs):
+    import linecache
+    linecache.clearcache()
+
+get_ipython().events.register("pre_run_cell", __pre_run_handler)
+        """
+
+    @property
     def sidechannel_setup_section(self) -> str:
         return f"""
 import json
@@ -143,6 +155,8 @@ __ipb3dconfig_logger.info("Use %r to manually reload {self.watch_file!r} ")
 {self.log_setup_section}
 
 {self.sidechannel_setup_section}
+
+{self.pre_run_setup_section}
 
 {self.autoreload_section}
 

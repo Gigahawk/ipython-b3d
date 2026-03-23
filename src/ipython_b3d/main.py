@@ -48,6 +48,7 @@ class IPythonB3d:
         watch_file: str,
         ipython_args: list[str] | None = None,
         dbg_buf_len: int = 1024,
+        dbg_behavior: str = "skip",
     ):
         self.ipython_args: list[str] = []
         if ipython_args is not None:
@@ -62,6 +63,7 @@ class IPythonB3d:
         self.proc = None
         self.observer = None
         self.dbg_buf: collections.deque[int] = collections.deque(maxlen=dbg_buf_len)
+        self.dbg_behavior: str = dbg_behavior
         self.side_channel_buf: collections.deque[int] = collections.deque(maxlen=4096)
 
         _ = atexit.register(self.cleanup_sidechannel)
@@ -154,23 +156,20 @@ class IPythonB3d:
             f"Started monitor for {self.watch_file!r}. Save it to trigger a %run reload."
         )
 
-    def allow_reload(self) -> bool:
+    def inside_debugger(self) -> bool:
         lines = re.split(rb"[\r\n]+", bytes(self.dbg_buf))
         for line in reversed(lines):
             line = line.lstrip()
             if not line:
                 continue
             if _DBG_PROMPT_RE.search(line):
-                logger.warning("Inside debugger, ignoring reload request")
-                return False
-            if _IPYTHON_PROMPT_RE.search(line):
-                logger.debug("Found IPython prompt, issuing reload")
                 return True
+            if _IPYTHON_PROMPT_RE.search(line):
+                return False
         logger.warning(
-            "Warning: Could not find prompt, issuing reload anyways.",
-            file=sys.stderr,
+            "Warning: Could not find prompt, assuming we are not in a debugger"
         )
-        return True
+        return False
 
     def set_signal_handlers(self):
         def _sigwinch(_sig, _frame):
@@ -212,6 +211,26 @@ class IPythonB3d:
             logger.error(f"Recieved unknown side channel payload: {payload}")
         else:
             func(*args, **kwargs)
+
+    def issue_reload(self, insert_exit: bool = False):
+        # Small delay so the editor has fully flushed the file.
+        time.sleep(0.05)
+        if insert_exit:
+            # Inject: Ctrl-C to interrupt current debugger line
+            os.write(self.master_fd, b"\x03")  # Ctrl-C
+
+            time.sleep(0.05)  # Let debugger print ^C
+
+            cmd = "exit\n".encode()
+            os.write(self.master_fd, cmd)
+            time.sleep(0.05)
+
+        # Inject: Ctrl-C to interrupt any running cell, then %run.
+        os.write(self.master_fd, b"\x03")  # Ctrl-C
+
+        time.sleep(0.05)  # Let IPython print ^C
+        cmd = f"%run {self.watch_file}\n".encode()
+        os.write(self.master_fd, cmd)
 
     def input_loop(self):
         while True:
@@ -258,16 +277,17 @@ class IPythonB3d:
             if self.monitor_pipe_r in rfds:
                 os.read(self.monitor_pipe_r, 64)  # Drain the wake-up byte(s).
 
-                if self.allow_reload():
-                    # Small delay so the editor has fully flushed the file.
-                    time.sleep(0.05)
-
-                    # Inject: Ctrl-C to interrupt any running cell, then %run.
-                    os.write(self.master_fd, b"\x03")  # Ctrl-C
-
-                    time.sleep(0.05)  # Let IPython print ^C
-                    cmd = f"%run {self.watch_file}\n".encode()
-                    os.write(self.master_fd, cmd)
+                if self.inside_debugger():
+                    if self.dbg_behavior.lower() == "skip":
+                        logger.warning("Inside debugger, ignoring reload request")
+                    else:
+                        logger.warning(
+                            "Inside debugger, exiting debugger and issueing reload"
+                        )
+                        self.issue_reload(insert_exit=True)
+                else:
+                    logger.debug("Not in debugger, issuing reload")
+                    self.issue_reload()
 
             if self.side_channel_fd in rfds:
                 data = os.read(self.side_channel_fd, 4096)
@@ -322,9 +342,17 @@ def main():
         "--dbg-buflen",
         type=int,
         default=1024,
+        help="Length of buffer used to detect if a debugger is active.",
+    )
+    _ = parser.add_argument(
+        "--dbg-behavior",
+        type=str,
+        default="skip",
+        choices=["skip", "exit"],
         help=(
-            "Length of buffer used to detect if a debugger is active.\n"
-            "Reloads will not be triggered when a debugger is detected."
+            "Reload action when inside a debugger.\n"
+            "By default, reloads will not be triggered when a debugger is detected.\n"
+            "Set to 'exit' to automatically exit the debugger and trigger the reload"
         ),
     )
     _log_levels = ["debug", "info", "warning", "error", "critical"]
@@ -360,6 +388,7 @@ def main():
         fname,
         ipython_args=ipython_config.args,
         dbg_buf_len=args.dbg_buflen,
+        dbg_behavior=args.dbg_behavior,
     )
     wrapper.run()
 
