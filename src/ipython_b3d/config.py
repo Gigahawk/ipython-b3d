@@ -1,4 +1,7 @@
 from argparse import Namespace
+import inspect
+
+import ipython_b3d.logging as _logging
 
 
 class IPythonConfig:
@@ -9,6 +12,8 @@ class IPythonConfig:
 
         self.watch_file: str = args.file
         self.autoreload: int = args.autoreload
+        self.log_level: str = args.log_level
+        self.b3d_log_level: str = args.b3d_log_level
         self._c = ""
 
         self.filter_args()
@@ -27,10 +32,23 @@ class IPythonConfig:
                 self.ipy_args.remove(arg)
 
     @property
+    def log_setup_section(self) -> str:
+        return f"""
+{inspect.getsource(_logging)}
+
+setup_logging({self.log_level!r})
+
+__ipb3d_b3d_logger = logging.getLogger("build123d")
+__ipb3d_b3d_logger.setLevel(getattr(logging, {self.b3d_log_level.upper()!r}, logging.WARNING))
+
+__ipb3dconfig_logger = logging.getLogger("IPythonConfig")
+        """
+
+    @property
     def autoreload_section(self) -> str:
         if self.autoreload > 0:
             return f"""
-print("[IPythonConfig] Enabling autoreload mode {self.autoreload}")
+__ipb3dconfig_logger.info("Enabling autoreload mode {self.autoreload}")
 %load_ext autoreload
 %autoreload {self.autoreload}
             """
@@ -42,17 +60,21 @@ print("[IPythonConfig] Enabling autoreload mode {self.autoreload}")
 from IPython.core.magic import register_line_magic
 from IPython import get_ipython
 
+__ipb3dmanualrun_logger = logging.getLogger("Manual Run")
+
 @register_line_magic
 def r(line):
-    print("[Manual Run] Executing {self.watch_file!r}")
+    __ipb3dmanualrun_logger.warning("Executing {self.watch_file!r}")
     get_ipython().run_line_magic("run", '"{self.watch_file}"')
 
-print("[IPythonConfig] Use %r to manually reload {self.watch_file!r} ")
+__ipb3dconfig_logger.info("Use %r to manually reload {self.watch_file!r} ")
         """
 
     @property
     def c(self) -> str:
         return f"""
+{self.log_setup_section}
+
 {self.autoreload_section}
 
 {self.manual_reload_section}

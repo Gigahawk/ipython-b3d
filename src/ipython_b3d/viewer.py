@@ -1,8 +1,11 @@
+import logging
 from multiprocessing import Process
+
+logger = logging.getLogger("Viewer")
 
 
 def _run_ocp_vscode(args: list[str]):
-    print("[Viewer] Starting viewer")
+    logger.info("Starting viewer")
     # import in function to avoid slow startup
     from ocp_vscode.__main__ import main
 

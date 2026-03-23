@@ -10,6 +10,7 @@ import select
 import fcntl
 import collections
 import re
+import logging
 
 from watchdog.observers import Observer
 
@@ -23,6 +24,7 @@ from ipython_b3d.util import (
     strip_unprintable,
 )
 from ipython_b3d.config import IPythonConfig
+from ipython_b3d.logging import setup_logging
 
 
 # Match "(Pdb) ", "(Pdb++) ", "ipdb>", "ipdb++>"
@@ -32,6 +34,8 @@ _DBG_PROMPT_RE = re.compile(rb"^\(Pdb\+{0,2}\) |^ipdb\+{0,2}>")
 
 # Match "In [<number>]: "
 _IPYTHON_PROMPT_RE = re.compile(rb"^In \[\d+\]: ")
+
+logger = logging.getLogger("ipython-b3d")
 
 
 class IPythonB3d:
@@ -61,7 +65,7 @@ class IPythonB3d:
             os.setsid()
             fcntl.ioctl(slave_fd, termios.TIOCSCTTY, 0)
 
-        print("[ipython-b3d] Starting IPython console")
+        logger.info("Starting IPython console")
         self.proc = subprocess.Popen(
             ["ipython"] + self.ipython_args,
             stdin=self.slave_fd,
@@ -74,8 +78,8 @@ class IPythonB3d:
         os.close(self.slave_fd)
 
         self.start_file_watcher()
-        print(
-            f"[ipython-b3d] Started monitor for {self.watch_file!r}. Save it to trigger a %run reload.\n"
+        logger.info(
+            f"Started monitor for {self.watch_file!r}. Save it to trigger a %run reload."
         )
 
         self.stdin_fd = sys.stdin.fileno()
@@ -130,13 +134,13 @@ class IPythonB3d:
             if not line:
                 continue
             if _DBG_PROMPT_RE.search(line):
-                print("[ipython-b3d] Inside debugger, ignoring reload request")
+                logger.info("Inside debugger, ignoring reload request")
                 return False
             if _IPYTHON_PROMPT_RE.search(line):
-                print("[ipython-b3d] Found IPython prompt, issuing reload")
+                logger.debug("Found IPython prompt, issuing reload")
                 return True
-        print(
-            "[ipython-b3d] Warning: Could not find prompt, issuing reload anyways.",
+        logger.warning(
+            "Warning: Could not find prompt, issuing reload anyways.",
             file=sys.stderr,
         )
         return True
@@ -158,7 +162,7 @@ class IPythonB3d:
     def input_loop(self):
         while True:
             if self.proc is not None and self.proc.poll() is not None:
-                print("[ipython-b3d] IPython has exited", file=sys.stderr)
+                logger.error("IPython has exited", file=sys.stderr)
                 break
 
             try:
@@ -166,10 +170,7 @@ class IPythonB3d:
                     [self.master_fd, self.stdin_fd, self.msg_pipe_r], [], [], 0.05
                 )
             except (select.error, ValueError):
-                print(
-                    "[ipython-b3d] master_fd closed, IPython has exited",
-                    file=sys.stderr,
-                )
+                logger.error("master_fd closed, IPython has exited")
                 break
 
             # 1. Data from IPython → user's stdout
@@ -251,12 +252,29 @@ def main():
             "Reloads will not be triggered when a debugger is detected."
         ),
     )
+    _log_levels = ["debug", "info", "warning", "error", "critical"]
+    _ = parser.add_argument(
+        "--log-level",
+        type=str,
+        default="info",
+        choices=_log_levels,
+        help="Verbosity of ipython-b3d/general log messages",
+    )
+    _ = parser.add_argument(
+        "--b3d-log-level",
+        type=str,
+        default="warning",
+        choices=_log_levels,
+        help="Verbosity of build123d log messages",
+    )
     args, rest = parser.parse_known_args()
     rest_args = split_args(rest)
     fname: str = str(args.file)
 
+    setup_logging(args.log_level)
+
     if not os.path.isfile(fname):
-        print(f"[ipython-b3d] ERROR: File not found: {fname!r}", file=sys.stderr)
+        logger.error(f"File not found: {fname!r}")
         sys.exit(1)
 
     ipython_config = IPythonConfig(args, rest_args["--ipy"])
