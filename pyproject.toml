@@ -11,7 +11,12 @@ version = "0.1.0"
 description = "IPython wrapper for build123d and cadquery projects (linux/macos only)"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["ipython>=9.11.0", "ocp-vscode>=3.1.2", "watchdog>=6.0.0"]
+dependencies = [
+  "inquirerpy>=0.3.4",
+  "ipython>=9.11.0",
+  "ocp-vscode>=3.1.2",
+  "watchdog>=6.0.0"
+]
 
 [project.scripts]
 ipb3d = "ipython_b3d.main:main"

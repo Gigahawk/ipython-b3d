@@ -1,7 +1,9 @@
+import os
 import termios
 import fcntl
 import sys
 import re
+import tempfile
 
 # import string
 
@@ -87,3 +89,12 @@ def strip_unprintable(data: bytes) -> bytes:
     # out = bytes(filter(lambda c: c in ascii_chars, data))
     out = _ANSI_ESCAPE_RE.sub(b"", data)
     return out
+
+
+# TODO: cleanup?
+_fifo_path = os.path.join(tempfile.mkdtemp(), "ipy_wrapper.fifo")
+os.mkfifo(_fifo_path)
+
+
+def get_sidechannel_fifo_path():
+    return _fifo_path

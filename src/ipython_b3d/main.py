@@ -11,6 +11,7 @@ import fcntl
 import collections
 import re
 import logging
+import json
 
 from watchdog.observers import Observer
 
@@ -22,6 +23,7 @@ from ipython_b3d.util import (
     make_raw,
     split_args,
     strip_unprintable,
+    get_sidechannel_fifo_path,
 )
 from ipython_b3d.config import IPythonConfig
 from ipython_b3d.logging import setup_logging
@@ -49,12 +51,21 @@ class IPythonB3d:
         if ipython_args is not None:
             self.ipython_args = ipython_args
         self.watch_file: str = watch_file
-        self.msg_pipe_r, self.msg_pipe_w = os.pipe()
+        self.monitor_pipe_r, self.monitor_pipe_w = os.pipe()
         self.master_fd = None
         self.slave_fd = None
         self.stdin_fd = None
+        self.side_channel_fd = None
+        self.reset_sidechannel()
         self.proc = None
+        self.observer = None
         self.dbg_buf: collections.deque[int] = collections.deque(maxlen=dbg_buf_len)
+        self.side_channel_buf: collections.deque[int] = collections.deque(maxlen=4096)
+
+    def reset_sidechannel(self):
+        self.side_channel_fd = os.open(
+            get_sidechannel_fifo_path(), os.O_RDONLY | os.O_NONBLOCK
+        )
 
     def run(self):
         self.master_fd, self.slave_fd = pty.openpty()
@@ -77,10 +88,7 @@ class IPythonB3d:
 
         os.close(self.slave_fd)
 
-        self.start_file_watcher()
-        logger.info(
-            f"Started monitor for {self.watch_file!r}. Save it to trigger a %run reload."
-        )
+        self.restart_file_watcher()
 
         self.stdin_fd = sys.stdin.fileno()
         old_attrs = termios.tcgetattr(self.stdin_fd)
@@ -100,8 +108,8 @@ class IPythonB3d:
                 pass
 
             try:
-                os.close(self.msg_pipe_r)
-                os.close(self.msg_pipe_w)
+                os.close(self.monitor_pipe_r)
+                os.close(self.monitor_pipe_w)
             except OSError:
                 pass
 
@@ -114,18 +122,25 @@ class IPythonB3d:
     def watch_dir(self) -> str:
         return os.path.dirname(self.watch_file)
 
-    def start_file_watcher(self):
-        observer = Observer()
-        observer.schedule(
+    def restart_file_watcher(self):
+        if self.observer:
+            logger.debug("Stopping existing monitor")
+            self.observer.stop()
+
+        self.observer = Observer()
+        self.observer.schedule(
             IPythonB3dEventHandler(
                 self.watch_file,
-                self.msg_pipe_w,
+                self.monitor_pipe_w,
             ),
             self.watch_dir,
             recursive=False,
         )
-        observer.daemon = True
-        observer.start()
+        self.observer.daemon = True
+        self.observer.start()
+        logger.info(
+            f"Started monitor for {self.watch_file!r}. Save it to trigger a %run reload."
+        )
 
     def allow_reload(self) -> bool:
         lines = re.split(rb"[\r\n]+", bytes(self.dbg_buf))
@@ -134,7 +149,7 @@ class IPythonB3d:
             if not line:
                 continue
             if _DBG_PROMPT_RE.search(line):
-                logger.info("Inside debugger, ignoring reload request")
+                logger.warning("Inside debugger, ignoring reload request")
                 return False
             if _IPYTHON_PROMPT_RE.search(line):
                 logger.debug("Found IPython prompt, issuing reload")
@@ -159,6 +174,27 @@ class IPythonB3d:
         signal.signal(signal.SIGWINCH, signal.SIG_DFL)
         signal.signal(signal.SIGINT, signal.SIG_DFL)
 
+    def switch_file(self, file_path: str):
+        file_path = os.path.abspath(file_path)
+        logger.info(f"Switching monitored file to {file_path}")
+        if file_path == self.watch_file:
+            logger.warning(f"Already monitoring {file_path}")
+        else:
+            self.watch_file = file_path
+            self.restart_file_watcher()
+
+    def handle_side_channel_msg(self, payload: dict):
+        cmd = payload.get("cmd", None)
+        args = payload.get("args", [])
+        kwargs = payload.get("kwargs", {})
+
+        cmd_handlers = {"switch_file": self.switch_file}
+        func = cmd_handlers.get(cmd, None)
+        if not func:
+            logger.error(f"Recieved unknown side channel payload: {payload}")
+        else:
+            func(*args, **kwargs)
+
     def input_loop(self):
         while True:
             if self.proc is not None and self.proc.poll() is not None:
@@ -167,7 +203,15 @@ class IPythonB3d:
 
             try:
                 rfds, _, _ = select.select(
-                    [self.master_fd, self.stdin_fd, self.msg_pipe_r], [], [], 0.05
+                    [
+                        self.master_fd,
+                        self.stdin_fd,
+                        self.monitor_pipe_r,
+                        self.side_channel_fd,
+                    ],
+                    [],
+                    [],
+                    0.05,
                 )
             except (select.error, ValueError):
                 logger.error("master_fd closed, IPython has exited")
@@ -193,8 +237,8 @@ class IPythonB3d:
                     os.write(self.master_fd, data)
 
             # 3. Reload signal from the file watcher
-            if self.msg_pipe_r in rfds:
-                os.read(self.msg_pipe_r, 64)  # Drain the wake-up byte(s).
+            if self.monitor_pipe_r in rfds:
+                os.read(self.monitor_pipe_r, 64)  # Drain the wake-up byte(s).
 
                 if self.allow_reload():
                     # Small delay so the editor has fully flushed the file.
@@ -206,6 +250,19 @@ class IPythonB3d:
                     time.sleep(0.05)  # Let IPython print ^C
                     cmd = f"%run {self.watch_file}\n".encode()
                     os.write(self.master_fd, cmd)
+
+            if self.side_channel_fd in rfds:
+                data = os.read(self.side_channel_fd, 4096)
+                if not data:
+                    self.reset_sidechannel()
+                else:
+                    self.side_channel_buf.extend(data)
+                    try:
+                        msg = json.loads(bytes(self.side_channel_buf))
+                        self.side_channel_buf.clear()
+                        self.handle_side_channel_msg(msg)
+                    except (json.JSONDecodeError, UnicodeDecodeError):
+                        pass
 
 
 class _ArgFormatter(
