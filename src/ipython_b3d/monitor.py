@@ -7,7 +7,7 @@ from watchdog.events import FileSystemEventHandler, FileSystemEvent
 
 class IPythonB3dEventHandler(FileSystemEventHandler):
     def __init__(self, file_to_watch: str, msg_pipe: int, debounce_time: float = 0.5):
-        self.file_to_watch: str = os.path.abspath(file_to_watch)
+        self.file_to_watch: str = file_to_watch
         self.debounce_time: float = debounce_time
         self.last_run: float = 0.0
         self.msg_pipe: int = msg_pipe
@@ -36,5 +36,5 @@ class IPythonB3dEventHandler(FileSystemEventHandler):
     def on_modified(self, event: FileSystemEvent):
         if event.is_directory:
             return
-        if os.path.abspath(event.src_path) == self.file_to_watch:
+        if os.path.abspath(event.src_path) == os.path.abspath(self.file_to_watch):
             self._request_reload()

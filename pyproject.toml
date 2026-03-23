@@ -14,4 +14,5 @@ requires-python = ">=3.12"
 dependencies = ["ipython>=9.11.0", "ocp-vscode>=3.1.2", "watchdog>=6.0.0"]
 
 [project.scripts]
-ipb3d = "ipython-b3d.main:main"
+ipb3d = "ipython_b3d.main:main"
+ipython-b3d = "ipython_b3d.main:main"

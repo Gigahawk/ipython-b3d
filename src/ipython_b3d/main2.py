@@ -5,7 +5,6 @@ import sys
 import os
 import subprocess
 import termios
-from multiprocessing import Process
 import signal
 import select
 import fcntl
@@ -14,12 +13,16 @@ from watchdog.observers import Observer
 
 from ipython_b3d.viewer import run_ocp_vscode
 from ipython_b3d.monitor import IPythonB3dEventHandler
-from ipython_b3d.util import resize_pty, set_tty_attr, make_raw
+from ipython_b3d.util import resize_pty, set_tty_attr, make_raw, split_args
+from ipython_b3d.config import IPythonConfig
 
 
 class IPythonB3d:
-    def __init__(self, watch_file: str):
-        self.abs_path: str = os.path.abspath(watch_file)
+    def __init__(self, watch_file: str, ipython_args: list[str] | None = None):
+        self.ipython_args: list[str] = []
+        if ipython_args is not None:
+            self.ipython_args = ipython_args
+        self.watch_file: str = watch_file
         self.msg_pipe_r, self.msg_pipe_w = os.pipe()
         self.master_fd = None
         self.slave_fd = None
@@ -27,8 +30,6 @@ class IPythonB3d:
         self.proc = None
 
     def run(self):
-        self.start_viewer()
-
         self.master_fd, self.slave_fd = pty.openpty()
 
         resize_pty(self.master_fd)
@@ -39,7 +40,7 @@ class IPythonB3d:
 
         print("[ipython-b3d] Starting IPython console")
         self.proc = subprocess.Popen(
-            ["ipython"],
+            ["ipython"] + self.ipython_args,
             stdin=self.slave_fd,
             stdout=self.slave_fd,
             stderr=self.slave_fd,
@@ -51,7 +52,7 @@ class IPythonB3d:
 
         self.start_file_watcher()
         print(
-            f"[ipython-b3d] Started monitor for {self.abs_path!r}. Save it to trigger a %run reload.\n"
+            f"[ipython-b3d] Started monitor for {self.watch_file!r}. Save it to trigger a %run reload.\n"
         )
 
         self.stdin_fd = sys.stdin.fileno()
@@ -84,18 +85,13 @@ class IPythonB3d:
 
     @property
     def watch_dir(self) -> str:
-        return os.path.dirname(self.abs_path)
-
-    def start_viewer(self):
-        ocp_proc = Process(target=run_ocp_vscode)
-        ocp_proc.daemon = True
-        ocp_proc.start()
+        return os.path.dirname(self.watch_file)
 
     def start_file_watcher(self):
         observer = Observer()
         observer.schedule(
             IPythonB3dEventHandler(
-                self.abs_path,
+                self.watch_file,
                 self.msg_pipe_w,
             ),
             self.watch_dir,
@@ -164,25 +160,58 @@ class IPythonB3d:
                 os.write(self.master_fd, b"\x03")  # Ctrl-C
 
                 time.sleep(0.05)  # Let IPython print ^C
-                cmd = f"%run {self.abs_path}\n".encode()
+                cmd = f"%run {self.watch_file}\n".encode()
                 os.write(self.master_fd, cmd)
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="IPython REPL with automatic %run on file save."
-    )
-    parser.add_argument(
-        "file",
-        help="Python file to watch and %run when saved.",
-    )
-    args = parser.parse_args()
+class _ArgFormatter(
+    argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHelpFormatter
+):
+    pass
 
-    if not os.path.isfile(args.file):
-        print(f"[ipython-b3d] ERROR: File not found: {args.file!r}", file=sys.stderr)
+
+def main():
+    parser = argparse.ArgumentParser(formatter_class=_ArgFormatter)
+    parser.description = f"""
+    IPython wrapper that automatically spawns an ocp-vscode instance and autoreloads files on save.
+
+    Argument forwarding:
+        --ipy<arg>(=val) -> forwarded to IPython
+        --ocv<arg>(=val) -> forwarded to ocp-vscode
+
+        Note: for arguments with values you MUST use a '=', ' ' is not allowed.
+
+    Example:
+        {parser.prog} \\
+            --ipy-c="print('hello')" --ipy--matplotlib=qt --ipyprofile --ipycreate \\
+            --ocv-ticks=10
+
+    """
+    _ = parser.add_argument(
+        "file",
+        type=lambda p: os.path.abspath(p),
+        help="Python file to watch and %%run when saved.",
+    )
+    _ = parser.add_argument(
+        "--autoreload",
+        type=int,
+        default=2,
+        choices=[0, 1, 2, 3],
+        help="IPython autoreload mode, set to 0 to disable",
+    )
+    args, rest = parser.parse_known_args()
+    rest_args = split_args(rest)
+    fname: str = str(args.file)
+
+    if not os.path.isfile(fname):
+        print(f"[ipython-b3d] ERROR: File not found: {fname!r}", file=sys.stderr)
         sys.exit(1)
 
-    wrapper = IPythonB3d(args.file)
+    ipython_config = IPythonConfig(args, rest_args["--ipy"])
+
+    run_ocp_vscode(rest_args["--ocv"])
+
+    wrapper = IPythonB3d(fname, ipython_config.args)
     wrapper.run()
 
 

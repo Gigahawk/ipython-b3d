@@ -57,3 +57,19 @@ def make_raw(fd: int) -> list:
     new[6][termios.VTIME] = 0
 
     termios.tcsetattr(fd, termios.TCSADRAIN, new)
+
+
+def split_args(rest: list[str]) -> dict[str, list[str]]:
+    allowed_prefixes = [
+        "--ipy",
+        "--ocv",
+    ]
+    out: dict[str, list[str]] = {p: [] for p in allowed_prefixes}
+    for arg in rest:
+        for prefix in allowed_prefixes:
+            if arg.startswith(prefix):
+                out[prefix].append(arg.removeprefix(prefix))
+                break
+        else:
+            raise ValueError(f"Unknown argument {arg}")
+    return out
