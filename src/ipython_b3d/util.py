@@ -1,3 +1,4 @@
+import argparse
 import os
 import termios
 import fcntl
@@ -89,6 +90,16 @@ def strip_unprintable(data: bytes) -> bytes:
     # out = bytes(filter(lambda c: c in ascii_chars, data))
     out = _ANSI_ESCAPE_RE.sub(b"", data)
     return out
+
+
+def float_range(min_val: float, max_val: float):
+    def _type(value: float):
+        f = float(value)
+        if not min_val <= f <= max_val:
+            raise argparse.ArgumentTypeError(f"must be between {min_val} and {max_val}")
+        return f
+
+    return _type
 
 
 # TODO: cleanup?

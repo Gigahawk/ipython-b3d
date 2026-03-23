@@ -26,6 +26,7 @@ from ipython_b3d.util import (
     split_args,
     strip_unprintable,
     get_sidechannel_fifo_path,
+    float_range,
 )
 from ipython_b3d.config import IPythonConfig
 from ipython_b3d.logging import setup_logging
@@ -49,6 +50,7 @@ class IPythonB3d:
         ipython_args: list[str] | None = None,
         dbg_buf_len: int = 1024,
         dbg_behavior: str = "skip",
+        monitor_debounce: float = 0.5,
     ):
         self.ipython_args: list[str] = []
         if ipython_args is not None:
@@ -65,6 +67,7 @@ class IPythonB3d:
         self.dbg_buf: collections.deque[int] = collections.deque(maxlen=dbg_buf_len)
         self.dbg_behavior: str = dbg_behavior
         self.side_channel_buf: collections.deque[int] = collections.deque(maxlen=4096)
+        self.monitor_debounce: float = monitor_debounce
 
         _ = atexit.register(self.cleanup_sidechannel)
 
@@ -146,6 +149,7 @@ class IPythonB3d:
             IPythonB3dEventHandler(
                 self.watch_file,
                 self.monitor_pipe_w,
+                debounce_time=self.monitor_debounce,
             ),
             self.watch_dir,
             recursive=False,
@@ -355,6 +359,16 @@ def main():
             "Set to 'exit' to automatically exit the debugger and trigger the reload"
         ),
     )
+    _ = parser.add_argument(
+        "--monitor-debounce",
+        type=float_range(0.0, 3.0),
+        default=0.5,
+        help=(
+            "Minimum time between automatic reloads.\n"
+            "Many editors emit multiple write events when saving.\n"
+            "Adjust this value high enough to ignore multiple subsequent events."
+        ),
+    )
     _log_levels = ["debug", "info", "warning", "error", "critical"]
     _ = parser.add_argument(
         "--log-level",
@@ -389,6 +403,7 @@ def main():
         ipython_args=ipython_config.args,
         dbg_buf_len=args.dbg_buflen,
         dbg_behavior=args.dbg_behavior,
+        monitor_debounce=args.monitor_debounce,
     )
     wrapper.run()
 
