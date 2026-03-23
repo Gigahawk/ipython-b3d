@@ -18,3 +18,9 @@ This command will:
 - Start an ocp-vscode instance in standalone mode
 - Monitor the `<file_to_watch>` and automatically trigger reload when the file
   is saved
+
+## Improvements over filewatcher123d
+
+- Support for passing arguments through to ocp-vscode and IPython
+- Proper handling of debugger prompts
+- Support for switching the monitored file without exiting
