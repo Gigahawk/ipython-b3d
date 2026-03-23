@@ -12,6 +12,8 @@ import collections
 import re
 import logging
 import json
+import atexit
+import contextlib
 
 from watchdog.observers import Observer
 
@@ -62,10 +64,20 @@ class IPythonB3d:
         self.dbg_buf: collections.deque[int] = collections.deque(maxlen=dbg_buf_len)
         self.side_channel_buf: collections.deque[int] = collections.deque(maxlen=4096)
 
+        _ = atexit.register(self.cleanup_sidechannel)
+
     def reset_sidechannel(self):
         self.side_channel_fd = os.open(
             get_sidechannel_fifo_path(), os.O_RDONLY | os.O_NONBLOCK
         )
+
+    def cleanup_sidechannel(self):
+        with contextlib.suppress(OSError):
+            os.close(self.side_channel_fd)
+        with contextlib.suppress(OSError):
+            os.unlink(get_sidechannel_fifo_path())
+        with contextlib.suppress(OSError):
+            os.rmdir(os.path.dirname(get_sidechannel_fifo_path()))
 
     def run(self):
         self.master_fd, self.slave_fd = pty.openpty()
@@ -164,11 +176,17 @@ class IPythonB3d:
         def _sigwinch(_sig, _frame):
             resize_pty(self.master_fd)
 
+        def _sigterm(_sig, _frame):
+            raise SystemExit(0)
+
         # Forward window size changes to pty
         signal.signal(signal.SIGWINCH, _sigwinch)
 
         # Ignore SIGINT (Ctrl-C) in wrapper, signal is still forwarded to the pty
         signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+        # Force SIGTERM to trigger atexit registrations
+        signal.signal(signal.SIGTERM, _sigterm)
 
     def unset_signal_handlers(self):
         signal.signal(signal.SIGWINCH, signal.SIG_DFL)
