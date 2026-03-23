@@ -1,0 +1,64 @@
+# ruff: noqa: F405
+from build123d import *  # noqa: F403
+from ocp_vscode import *  # noqa: F403
+
+import otherparameters
+
+
+set_port(3939)
+set_defaults(
+    ortho=True,
+    default_edgecolor="#121212",
+    reset_camera=Camera.KEEP,
+    axes=True,
+    axes0=True,
+)
+
+
+def build():
+    import pdbpp
+
+    pdbpp.set_trace()
+    length = 80.0
+
+    import pdb
+
+    pdb.pdb.set_trace()
+    width = 60.0
+
+    import ipdb
+
+    ipdb.set_trace()
+    thickness = otherparameters.thickness
+
+    with BuildPart() as ex16_single:
+        with BuildSketch(Plane.XZ) as ex16_sk:
+            Rectangle(length, width)
+            fillet(ex16_sk.vertices(), radius=length / 10)
+            with GridLocations(x_spacing=length / 4, y_spacing=0, x_count=3, y_count=1):
+                Circle(length / 12, mode=Mode.SUBTRACT)
+            Rectangle(length, width, align=(Align.MIN, Align.MIN), mode=Mode.SUBTRACT)
+        extrude(amount=thickness)
+
+    with BuildPart() as ex16:
+        add(ex16_single.part)
+        mirror(ex16_single.part, about=Plane.XY.offset(width))
+        mirror(ex16_single.part, about=Plane.YX.offset(width))
+        mirror(ex16_single.part, about=Plane.YZ.offset(width))
+        mirror(ex16_single.part, about=Plane.YZ.offset(-width))
+
+    print(f"Part volume is: {ex16.part.volume}")
+
+
+build()
+
+
+set_colormap(ColorMap.seeded(colormap="rgb", alpha=1, seed_value="vscod"))
+# fmt: off
+show_all(
+    classes = [BuildPart, BuildSketch, BuildLine, ],  # comment to show all objects
+    include = ["", ],
+    exclude = ["", ],
+    show_sketch_local = False,
+    helper_scale = 1,  # controls size of e.g. planes and axes
+)  # fmt: on

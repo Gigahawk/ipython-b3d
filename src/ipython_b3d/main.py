@@ -8,17 +8,39 @@ import termios
 import signal
 import select
 import fcntl
+import collections
+import re
 
 from watchdog.observers import Observer
 
 from ipython_b3d.viewer import run_ocp_vscode
 from ipython_b3d.monitor import IPythonB3dEventHandler
-from ipython_b3d.util import resize_pty, set_tty_attr, make_raw, split_args
+from ipython_b3d.util import (
+    resize_pty,
+    set_tty_attr,
+    make_raw,
+    split_args,
+    strip_unprintable,
+)
 from ipython_b3d.config import IPythonConfig
 
 
+# Match "(Pdb) ", "(Pdb++) ", "ipdb>", "ipdb++>"
+# Note: it seems like ipdb the ipdb prompt doesn't have a space after cleaning.
+# It probably uses some strange escape sequence that gets filtered out
+_DBG_PROMPT_RE = re.compile(rb"^\(Pdb\+{0,2}\) |^ipdb\+{0,2}>")
+
+# Match "In [<number>]: "
+_IPYTHON_PROMPT_RE = re.compile(rb"^In \[\d+\]: ")
+
+
 class IPythonB3d:
-    def __init__(self, watch_file: str, ipython_args: list[str] | None = None):
+    def __init__(
+        self,
+        watch_file: str,
+        ipython_args: list[str] | None = None,
+        dbg_buf_len: int = 1024,
+    ):
         self.ipython_args: list[str] = []
         if ipython_args is not None:
             self.ipython_args = ipython_args
@@ -28,6 +50,7 @@ class IPythonB3d:
         self.slave_fd = None
         self.stdin_fd = None
         self.proc = None
+        self.dbg_buf: collections.deque[int] = collections.deque(maxlen=dbg_buf_len)
 
     def run(self):
         self.master_fd, self.slave_fd = pty.openpty()
@@ -100,6 +123,24 @@ class IPythonB3d:
         observer.daemon = True
         observer.start()
 
+    def allow_reload(self) -> bool:
+        lines = re.split(rb"[\r\n]+", bytes(self.dbg_buf))
+        for line in reversed(lines):
+            line = line.lstrip()
+            if not line:
+                continue
+            if _DBG_PROMPT_RE.search(line):
+                print("[ipython-b3d] Inside debugger, ignoring reload request")
+                return False
+            if _IPYTHON_PROMPT_RE.search(line):
+                print("[ipython-b3d] Found IPython prompt, issuing reload")
+                return True
+        print(
+            "[ipython-b3d] Warning: Could not find prompt, issuing reload anyways.",
+            file=sys.stderr,
+        )
+        return True
+
     def set_signal_handlers(self):
         def _sigwinch(_sig, _frame):
             resize_pty(self.master_fd)
@@ -138,6 +179,7 @@ class IPythonB3d:
                 except OSError:
                     break  # PTY master closed — child has exited.
                 if data:
+                    self.dbg_buf.extend(strip_unprintable(data))
                     os.write(sys.stdout.fileno(), data)
 
             # 2. Data from user's stdin → IPython
@@ -153,15 +195,16 @@ class IPythonB3d:
             if self.msg_pipe_r in rfds:
                 os.read(self.msg_pipe_r, 64)  # Drain the wake-up byte(s).
 
-                # Small delay so the editor has fully flushed the file.
-                time.sleep(0.05)
+                if self.allow_reload():
+                    # Small delay so the editor has fully flushed the file.
+                    time.sleep(0.05)
 
-                # Inject: Ctrl-C to interrupt any running cell, then %run.
-                os.write(self.master_fd, b"\x03")  # Ctrl-C
+                    # Inject: Ctrl-C to interrupt any running cell, then %run.
+                    os.write(self.master_fd, b"\x03")  # Ctrl-C
 
-                time.sleep(0.05)  # Let IPython print ^C
-                cmd = f"%run {self.watch_file}\n".encode()
-                os.write(self.master_fd, cmd)
+                    time.sleep(0.05)  # Let IPython print ^C
+                    cmd = f"%run {self.watch_file}\n".encode()
+                    os.write(self.master_fd, cmd)
 
 
 class _ArgFormatter(
@@ -199,6 +242,15 @@ def main():
         choices=[0, 1, 2, 3],
         help="IPython autoreload mode, set to 0 to disable",
     )
+    _ = parser.add_argument(
+        "--dbg-buflen",
+        type=int,
+        default=1024,
+        help=(
+            "Length of buffer used to detect if a debugger is active.\n"
+            "Reloads will not be triggered when a debugger is detected."
+        ),
+    )
     args, rest = parser.parse_known_args()
     rest_args = split_args(rest)
     fname: str = str(args.file)
@@ -211,7 +263,11 @@ def main():
 
     run_ocp_vscode(rest_args["--ocv"])
 
-    wrapper = IPythonB3d(fname, ipython_config.args)
+    wrapper = IPythonB3d(
+        fname,
+        ipython_args=ipython_config.args,
+        dbg_buf_len=args.dbg_buflen,
+    )
     wrapper.run()
 
 

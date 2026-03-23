@@ -1,6 +1,11 @@
 import termios
 import fcntl
 import sys
+import re
+
+# import string
+
+_ANSI_ESCAPE_RE = re.compile(rb"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 
 def set_tty_attr(fd: int, attrs: list) -> None:
@@ -72,4 +77,13 @@ def split_args(rest: list[str]) -> dict[str, list[str]]:
                 break
         else:
             raise ValueError(f"Unknown argument {arg}")
+    return out
+
+
+def strip_unprintable(data: bytes) -> bytes:
+    # Doesn't strip support ansi escape sequences
+    # ascii_chars = set(bytes(string.printable, encoding="utf-8"))
+    # data = data.decode(encoding="utf-8", errors="ignore").encode(encoding="utf-8")
+    # out = bytes(filter(lambda c: c in ascii_chars, data))
+    out = _ANSI_ESCAPE_RE.sub(b"", data)
     return out
