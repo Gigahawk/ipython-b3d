@@ -47,7 +47,7 @@ __ipb3dconfig_logger = logging.getLogger("IPythonConfig")
 
     @property
     def pre_run_setup_section(self) -> str:
-        return f"""
+        return """
 from IPython import get_ipython
 
 def __pre_run_handler(*args, **kwargs):
