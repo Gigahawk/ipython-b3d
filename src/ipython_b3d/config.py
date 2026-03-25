@@ -13,6 +13,7 @@ class IPythonConfig:
 
         self.watch_file: str = args.file
         self.autoreload: int = args.autoreload
+        self.autorun: bool = args.autorun
         self.log_level: str = args.log_level
         self.b3d_log_level: str = args.b3d_log_level
         self._c = ""
@@ -146,8 +147,23 @@ def r(line):
     __ipb3dmanualrun_logger.warning(f"Executing {{__ipb3dmanualrun_target!r}}")
     get_ipython().run_line_magic("run", '"{{__ipb3dmanualrun_target}}"')
 
-__ipb3dconfig_logger.info("Use %r to manually reload {self.watch_file!r} ")
+__ipb3dconfig_logger.info("Use %r to for a quick manual reload of {self.watch_file!r} ")
+
+@register_line_magic
+def rr(line):
+    __send_sidechannel("hard_restart")
+    exit()
+
+__ipb3dconfig_logger.info("Use %rr to for a full manual reload of {self.watch_file!r} (restart IPython)")
         """
+
+    @property
+    def autorun_section(self) -> str:
+        out = ""
+        if self.autorun:
+            with open(self.watch_file, "r") as f:
+                out = f.read()
+        return out
 
     @property
     def c(self) -> str:
@@ -165,6 +181,8 @@ __ipb3dconfig_logger.info("Use %r to manually reload {self.watch_file!r} ")
 {self.switch_file_setup_section}
 
 {self._c}
+
+{self.autorun_section}
         """
 
     @property

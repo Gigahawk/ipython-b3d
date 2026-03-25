@@ -47,14 +47,12 @@ class IPythonB3d:
     def __init__(
         self,
         watch_file: str,
-        ipython_args: list[str] | None = None,
+        ipython_config: IPythonConfig,
         dbg_buf_len: int = 1024,
         dbg_behavior: str = "skip",
         monitor_debounce: float = 0.5,
     ):
-        self.ipython_args: list[str] = []
-        if ipython_args is not None:
-            self.ipython_args = ipython_args
+        self.ipython_config = ipython_config
         self.watch_file: str = watch_file
         self.monitor_pipe_r, self.monitor_pipe_w = os.pipe()
         self.master_fd = None
@@ -68,6 +66,7 @@ class IPythonB3d:
         self.dbg_behavior: str = dbg_behavior
         self.side_channel_buf: collections.deque[int] = collections.deque(maxlen=4096)
         self.monitor_debounce: float = monitor_debounce
+        self.should_restart: bool = False
 
         _ = atexit.register(self.cleanup_sidechannel)
 
@@ -85,6 +84,20 @@ class IPythonB3d:
             os.rmdir(os.path.dirname(get_sidechannel_fifo_path()))
 
     def run(self):
+        try:
+            while True:
+                self._run()
+                if not self.should_restart:
+                    break
+                self.should_restart = False
+        finally:
+            try:
+                os.close(self.monitor_pipe_r)
+                os.close(self.monitor_pipe_w)
+            except OSError:
+                pass
+
+    def _run(self):
         self.master_fd, self.slave_fd = pty.openpty()
 
         resize_pty(self.master_fd)
@@ -95,7 +108,7 @@ class IPythonB3d:
 
         logger.info("Starting IPython console")
         self.proc = subprocess.Popen(
-            ["ipython"] + self.ipython_args,
+            ["ipython"] + self.ipython_config.args,
             stdin=self.slave_fd,
             stdout=self.slave_fd,
             stderr=self.slave_fd,
@@ -121,12 +134,6 @@ class IPythonB3d:
 
             try:
                 os.close(self.master_fd)
-            except OSError:
-                pass
-
-            try:
-                os.close(self.monitor_pipe_r)
-                os.close(self.monitor_pipe_w)
             except OSError:
                 pass
 
@@ -204,12 +211,20 @@ class IPythonB3d:
             self.watch_file = file_path
             self.restart_file_watcher()
 
+    def hard_restart(self):
+        logger.info("Hard restart requested, waiting for exit")
+        self.should_restart = True
+        self.ipython_config.autorun = True
+
     def handle_side_channel_msg(self, payload: dict):
         cmd = payload.get("cmd", None)
         args = payload.get("args", [])
         kwargs = payload.get("kwargs", {})
 
-        cmd_handlers = {"switch_file": self.switch_file}
+        cmd_handlers = {
+            "switch_file": self.switch_file,
+            "hard_restart": self.hard_restart,
+        }
         func = cmd_handlers.get(cmd, None)
         if not func:
             logger.error(f"Recieved unknown side channel payload: {payload}")
@@ -384,6 +399,11 @@ def main():
         choices=_log_levels,
         help="Verbosity of build123d log messages",
     )
+    _ = parser.add_argument(
+        "--autorun",
+        action="store_true",
+        help="Automatically run target script on startup",
+    )
     args, rest = parser.parse_known_args()
     rest_args = split_args(rest)
     fname: str = str(args.file)
@@ -400,7 +420,7 @@ def main():
 
     wrapper = IPythonB3d(
         fname,
-        ipython_args=ipython_config.args,
+        ipython_config=ipython_config,
         dbg_buf_len=args.dbg_buflen,
         dbg_behavior=args.dbg_behavior,
         monitor_debounce=args.monitor_debounce,
