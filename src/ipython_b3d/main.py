@@ -254,7 +254,7 @@ class IPythonB3d:
     def input_loop(self):
         while True:
             if self.proc is not None and self.proc.poll() is not None:
-                logger.error("IPython has exited", file=sys.stderr)
+                logger.error("IPython has exited")
                 break
 
             try:

@@ -133,7 +133,6 @@ __ipb3dconfig_logger.info("Enabling autoreload mode {self.autoreload}")
             """
         return ""
 
-
     @property
     def manual_reload_section(self) -> str:
         return f"""
