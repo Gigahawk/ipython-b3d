@@ -133,6 +133,7 @@ __ipb3dconfig_logger.info("Enabling autoreload mode {self.autoreload}")
             """
         return ""
 
+
     @property
     def manual_reload_section(self) -> str:
         return f"""
@@ -159,11 +160,13 @@ __ipb3dconfig_logger.info("Use %rr to for a full manual reload of {self.watch_fi
 
     @property
     def autorun_section(self) -> str:
-        out = ""
         if self.autorun:
-            with open(self.watch_file, "r") as f:
-                out = f.read()
-        return out
+            return """
+from IPython import get_ipython
+
+get_ipython().run_line_magic("run", '"{__ipb3dmanualrun_target}"')
+            """
+        return ""
 
     @property
     def c(self) -> str:

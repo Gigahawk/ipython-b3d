@@ -402,7 +402,10 @@ def main():
     _ = parser.add_argument(
         "--autorun",
         action="store_true",
-        help="Automatically run target script on startup",
+        help=(
+            "Automatically run target script on startup.\n"
+            "Note that OCP VSCode will probably not be running/connected yet."
+        ),
     )
     args, rest = parser.parse_known_args()
     rest_args = split_args(rest)
