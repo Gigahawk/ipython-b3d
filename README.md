@@ -3,6 +3,9 @@
 IPython wrapper for use with [build123d](https://github.com/gumyr/build123d) and
 [CadQuery](https://github.com/CadQuery/cadquery) projects.
 
+> Note: Linux is the only supported platform, Mac support is probably possible
+> with some effort but I do not have a system to test on.
+
 Greatly inspired by
 [filewatcher123d](https://github.com/jdegenstein/filewatcher123d)
 

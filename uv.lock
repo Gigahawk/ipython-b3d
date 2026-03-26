@@ -619,6 +619,7 @@ dev = [
     { name = "build123d" },
     { name = "ipdb" },
     { name = "pdbpp" },
+    { name = "pexpect" },
     { name = "pytest" },
 ]
 
@@ -635,6 +636,7 @@ dev = [
     { name = "build123d", specifier = ">=0.10.0" },
     { name = "ipdb", specifier = ">=0.13.13" },
     { name = "pdbpp", specifier = ">=0.12.1" },
+    { name = "pexpect", specifier = ">=4.9.0" },
     { name = "pytest", specifier = ">=9.0.2" },
 ]
 
