@@ -407,6 +407,11 @@ def main():
             "Note that OCP VSCode will probably not be running/connected yet."
         ),
     )
+    _ = parser.add_argument(
+        "--no-visual-debug",
+        action="store_true",
+        help="Disable automatically renderring local objects in OCP VSCode on debug.",
+    )
     args, rest = parser.parse_known_args()
     rest_args = split_args(rest)
     fname: str = str(args.file)
