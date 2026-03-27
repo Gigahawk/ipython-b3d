@@ -12,6 +12,7 @@ class IPythonConfig:
             self.ipy_args = ipy_args
 
         self.watch_file: str = args.file
+        self.no_visual_debug: bool = args.no_visual_debug
         self.autoreload: int = args.autoreload
         self.autorun: bool = args.autorun
         self.log_level: str = args.log_level
@@ -168,6 +169,33 @@ get_ipython().run_line_magic("run", '"{__ipb3dmanualrun_target}"')
         return ""
 
     @property
+    def visual_debug_section(self) -> str:
+        if self.no_visual_debug:
+            return ""
+        return """
+def __wrap_visual_debug(func):
+    def _new(self, *args, **kwargs):
+        # print("WRAPPED")
+        result = func(self, *args, **kwargs)
+        _locals = self.curframe.f_locals
+        from ocp_vscode import show_all, get_port
+        # print(_locals)
+        show_all(_locals, port=get_port(), _visual_debug=True)
+        return result
+    return _new
+
+import pdb
+
+pdb.Pdb.postcmd = __wrap_visual_debug(pdb.Pdb.postcmd)
+
+try:
+    import pdbpp
+    pdbpp.Pdb.postcmd = __wrap_visual_debug(pdbpp.Pdb.postcmd)
+except ModuleNotFoundError:
+    pass
+        """
+
+    @property
     def c(self) -> str:
         return f"""
 {self.log_setup_section}
@@ -181,6 +209,8 @@ get_ipython().run_line_magic("run", '"{__ipb3dmanualrun_target}"')
 {self.manual_reload_section}
 
 {self.switch_file_setup_section}
+
+{self.visual_debug_section}
 
 {self._c}
 

@@ -16,20 +16,27 @@ set_defaults(
 
 
 def build():
+    local_rect = Rectangle(5, 5)  # noqa: F841
     import pdbpp
 
     pdbpp.set_trace()
-    length = 80.0
+    length = 50.0
+
+    local_circle = Circle(length)  # noqa: F841
 
     import pdb
 
     pdb.pdb.set_trace()
     width = 60.0
 
+    local_circle2 = Circle(width)  # noqa: F841
+
     import ipdb
 
     ipdb.set_trace()
     thickness = otherparameters.thickness
+
+    local_circle3 = Circle(thickness)  # noqa: F841
 
     with BuildPart() as ex16_single:
         with BuildSketch(Plane.XZ) as ex16_sk:
